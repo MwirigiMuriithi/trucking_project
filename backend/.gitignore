@@ -1,0 +1,59 @@
+# Python bytecode files
+*.pyc
+*.pyo
+__pycache__/
+
+# Virtual environment
+venv/
+.env/
+.venv/
+
+# Django stuff:
+db.sqlite3
+*.log
+
+# Django migrations
+*/migrations/*
+
+# Static files (optional, if you are using collectstatic)
+static/
+
+# Media files (optional, if you are storing uploaded files)
+media/
+
+# .env files (for environment variables)
+.env
+.env.*
+
+# IDEs and editors
+.vscode/
+.idea/
+
+# MacOS system files
+.DS_Store
+
+# Windows system files
+Thumbs.db
+
+# Coverage reports
+.coverage
+*.coveragerc
+
+# pytest and other test outputs
+*.dat
+nosetests.xml
+coverage.xml
+*.hypothesis/
+
+# mypy type checking
+.mypy_cache/
+
+# PyCharm project files
+.idea/
+
+# Sentry config (if you are using Sentry for error tracking)
+.sentry/
+
+# Docker related files (if using Docker)
+docker-compose.override.yml
+*.dockerfile

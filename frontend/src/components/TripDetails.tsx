@@ -1,4 +1,3 @@
-// src/components/TripDetails.tsx
 import React from 'react';
 import DailyLog from './DailyLog';
 import MapDisplay from './MapDisplay';

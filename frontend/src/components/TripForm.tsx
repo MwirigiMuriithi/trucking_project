@@ -1,7 +1,7 @@
-// src/components/TripForm.tsx
 import React, { useState, FormEvent } from 'react';
 import axios from 'axios';
 import { TripData } from '../types';
+import { API_ROOT } from '../config';
 
 interface TripFormProps {
   setTripData: React.Dispatch<React.SetStateAction<TripData | null>>;
@@ -20,16 +20,16 @@ const TripForm: React.FC<TripFormProps> = ({ setTripData }) => {
     setError(null);
     setLoading(true);
     try {
-      const response = await axios.post<TripData>('/api/calculate-trip/', {
+      const response = await axios.post<TripData>(`${API_ROOT}/api/calculate-trip/`, {
         currentLocation,
         pickupLocation,
         dropoffLocation,
-        currentCycleUsed,
+        currentCycleUsed: parseFloat(currentCycleUsed)
       });
       setTripData(response.data);
-    } catch (err) {
+    } catch (err: any) {
+      console.error("Error calculating trip:", err.response?.data || err.message);
       setError("Failed to calculate trip. Please check your inputs.");
-      console.error("Error calculating trip:", err);
     }
     setLoading(false);
   };
@@ -79,7 +79,7 @@ const TripForm: React.FC<TripFormProps> = ({ setTripData }) => {
             value={currentCycleUsed}
             onChange={(e) => setCurrentCycleUsed(e.target.value)}
             className="w-full p-2 border rounded"
-            placeholder="e.g. 5.5"
+            placeholder="e.g. 15"
             required
           />
         </div>

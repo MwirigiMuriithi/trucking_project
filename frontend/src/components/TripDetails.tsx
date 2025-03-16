@@ -43,3 +43,5 @@ const TripDetails: React.FC<TripDetailsProps> = ({ tripData }) => {
 };
 
 export default TripDetails;
+
+

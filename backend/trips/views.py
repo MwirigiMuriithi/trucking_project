@@ -7,10 +7,11 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from .serializers import TripSerializer
+from .models import Trip, Driver
 
 load_dotenv()
 
-# In this implementation we use OpenRouteService (ORS) APIs.
+# OpenRouteService (ORS) API key
 ORS_API_KEY = os.environ.get("ORS_API_KEY")
 if not ORS_API_KEY:
     raise Exception("ORS_API_KEY not set in environment variables.")
@@ -28,10 +29,6 @@ FUEL_MILE_INTERVAL = 1000.0   # Fueling stop every 1000 miles
 AVERAGE_SPEED = 50.0          # Average speed in mph
 
 def geocode_address(address):
-    """
-    Geocodes an address using the ORS geocoding API.
-    Returns coordinates in [lng, lat] format.
-    """
     geocode_url = "https://api.openrouteservice.org/geocode/search"
     params = {
         "api_key": ORS_API_KEY,
@@ -46,10 +43,6 @@ def geocode_address(address):
     raise Exception(f"Geocoding failed for address: {address}")
 
 def get_directions(route_coords):
-    """
-    Retrieves a driving route from the ORS directions API.
-    Returns the full directions data, including summary information.
-    """
     directions_url = "https://api.openrouteservice.org/v2/directions/driving-car"
     headers = {
         "Authorization": ORS_API_KEY,
@@ -64,26 +57,6 @@ def get_directions(route_coords):
     return dir_resp.json()
 
 def real_simulate_trip(current_loc, pickup_loc, dropoff_loc, cycle_used):
-    """
-    Simulates a trip with the following steps:
-      1. Geocode the provided addresses.
-      2. Retrieve the driving route (for summary and polyline, if needed).
-      3. Calculate trip distance (in miles) and total driving hours.
-      4. Simulate HOS events with:
-           - A 1-hour pickup event.
-           - Driving segments in 1-hour increments, obeying:
-               * Daily driving limit (11 hours) and on-duty limit (14 hours).
-               * A 30-minute break after 8 hours of driving.
-               * Fueling stops every 1000 miles.
-               * Integration of remaining cycle hours (70-hour/8-day cycle).
-           - A 1-hour dropoff event.
-           - If remaining cycle hours run out, a “Cycle Limit Reached” event is recorded.
-    Returns:
-      - route_coords: List of coordinates (from geocoding) used in the route.
-      - distance_miles: Total trip distance in miles.
-      - fuel_stops: List of fueling stop details.
-      - daily_logs: List of daily log objects describing the timeline.
-    """
     # --- Step 1: Geocode Addresses ---
     current_coords = geocode_address(current_loc)
     pickup_coords = geocode_address(pickup_loc)
@@ -94,9 +67,8 @@ def real_simulate_trip(current_loc, pickup_loc, dropoff_loc, cycle_used):
     directions_data = get_directions(route_coords)
     summary = directions_data["routes"][0]["summary"]
     distance_meters = summary["distance"]
-    distance_miles = distance_meters / 1609.34  # Convert meters to miles
-    distance_miles = round(distance_miles, 2)    # Round to two decimal places
-
+    distance_miles = distance_meters / 1609.34
+    distance_miles = round(distance_miles, 2)
     total_driving_hours = distance_miles / AVERAGE_SPEED
 
     # --- Step 3: Initialize Simulation Variables ---
@@ -281,8 +253,24 @@ class CalculateTripView(APIView):
         current_loc = data.get('currentLocation')
         pickup_loc = data.get('pickupLocation')
         dropoff_loc = data.get('dropoffLocation')
+        
+        # Retrieve driver using driverId (if provided) or create a new driver with driverName.
+        driver_id = data.get('driverId', '').strip()
+        driver_name = data.get('driverName', '').strip()
+
+        if driver_id:
+            try:
+                driver = Driver.objects.get(id=driver_id)
+            except Driver.DoesNotExist:
+                return Response({"error": "Driver not found."}, status=status.HTTP_404_NOT_FOUND)
+        else:
+            if not driver_name:
+                return Response({"error": "Driver name is required if no driver ID is provided."}, status=status.HTTP_400_BAD_REQUEST)
+            driver = Driver.objects.create(name=driver_name)
+        
+        # Use the driver's current cycle hours as the starting point.
         try:
-            cycle_used = float(data.get('currentCycleUsed', 0))
+            cycle_used = float(driver.current_cycle_hours_used)
         except (ValueError, TypeError):
             cycle_used = 0.0
 
@@ -294,12 +282,22 @@ class CalculateTripView(APIView):
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
         eld_form_data = build_eld_log_form(daily_logs)
+        
+        # Calculate the on-duty hours consumed during this trip.
+        trip_cycle_hours_used = sum(
+            1.0 for day in daily_logs for event in day.get("events", [])
+            if event["status"] != "Off Duty"
+        )
+        # Update the driver's cumulative cycle hours.
+        driver.current_cycle_hours_used += trip_cycle_hours_used
+        driver.save()
 
         trip_data = {
+            "driver": driver.id,
             "current_location": current_loc,
             "pickup_location": pickup_loc,
             "dropoff_location": dropoff_loc,
-            "current_cycle_hours_used": cycle_used,
+            "cycle_hours_used": trip_cycle_hours_used,
             "route": route,
             "logs": daily_logs,
             "distance": distance,
@@ -313,4 +311,3 @@ class CalculateTripView(APIView):
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
